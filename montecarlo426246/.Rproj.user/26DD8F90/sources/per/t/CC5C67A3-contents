@@ -1,0 +1,282 @@
+---
+title: "Report"
+author: "Nhat Tung Le, Id 426246"
+date: "2023-01-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+In accordance with the Honor Code, I certify that my answers here are my own work, and I
+did not make my solutions available to anyone else.
+
+
+
+
+## 1.Introduction 
+  
+We are considering a European style down-and-out call option with a barrier active between the moment of pricing and the option expiry.
+
+In this project, I try to create an Rcpp package which provides a function returning the Monte Carlo approximation of the option theoretical price.
+    
+![](img/img1.png)
+
+
+## 2.Coding
+
+### 2.1. Create a package using Rcpp
+
+With RStudio, we can easily create packages using Rcpp. The following figure is the folder structure in my project, where the .cpp files will be stored in the **src** folder.
+
+![](img/img2.png)
+
+### 2.2. Libraries
+
+In this project I reused the code from the lecturer, with the "getOneGaussianByBoxMueller" method, the goal was to get a random value. In addition, I also use some basic libraries from C++.
+
+The structure of the files related to C++ is as shown below:
+
+![](img/img3.png)
+
+### 2.3. Sources
+
+In this project, I use object-oriented programming. First I built the interface "EuropeanOption", then I re-implemented the necessary methods.
+
+Attributes include:
+
+* S_: the initial stock price S_0
+* K_: strike price
+* sigma_: annualized volatility rate
+* r_: annualized risk-free rate
+* t_: time to maturity
+* L: barrier level
+
+```{c++}
+
+#include<vector>
+
+class EuropeanOption{
+
+public:
+  //constructor
+  // S_: the initial stock price S_0
+  // K_: strike price
+  // sigma_: annualized volatility rate
+  // r_: annualized risk-free rate
+  // t_: time to maturity
+  // L: barrier level
+  EuropeanOption(double S_,
+                 double K_,
+                 double r_,
+                 double sigma_,
+                 double L_,
+                 double t_,
+                 int NumberOfPaths_
+  );
+
+  // method
+  double getDownAndOutCall();
+
+  //members
+  double S;
+  double K;
+  double r;
+  double sigma;
+  double L;
+  double t;
+  int NumberOfPaths;
+};
+
+
+```
+
+
+In the file EuropeanOption.cpp, I re-implemented all the necessary methods.
+
+* Constructor method helps us to create new object from class.
+
+```{c++}
+//definition of constructor
+EuropeanOption::EuropeanOption(double S_,
+                               double K_,
+                               double r_,
+                               double sigma_,
+                               double L_,
+                               double t_,
+                               int NumberOfPaths_){
+      S = S_;
+      K = K_;
+      r = r_;
+      sigma = sigma_;
+      L = L_;
+      t = t_;
+      NumberOfPaths = NumberOfPaths_;
+}
+```
+
+
+* Method getDownAndOutCall()
+
+```{c++}
+double EuropeanOption::getDownAndOutCall(){
+  double variance = sigma * sigma * S;
+  double rootVariance = sqrt(variance);
+  double itoCorrection = -0.5 * variance;
+  double movedSpot = S * exp(r * t + itoCorrection);
+  double thisSpot;
+  double runningSum = 0;
+
+  for (int i = 0; i < NumberOfPaths; i++) {
+    double thisGaussian = getOneGaussianByBoxMueller();
+    thisSpot = movedSpot * exp(rootVariance * thisGaussian);
+
+    if (thisSpot <= L) {
+        double thisPayoff = 0;
+        runningSum+=thisPayoff;
+    }else{
+        double thisPayoff = thisSpot - K;
+        runningSum+=thisPayoff>0?thisPayoff:0;
+    }
+    
+  }
+
+
+  double mean = runningSum / NumberOfPaths;
+  mean = mean * exp(-r * t);
+  return mean;
+}
+
+```
+
+The function uses a for loop to simulate the price of the underlying asset over a specified number of paths (NumberOfPaths).
+
+For each path, it generates a random value using the **getOneGaussianByBoxMueller()** function, which presumably generates a random value from a normal distribution. This random value is then used to calculate the simulated price of the underlying asset at the end of the path (thisSpot) using the formula: **thisSpot = movedSpot * exp(rootVariance * thisGaussian)**
+
+After simulating the price of the underlying asset, the code checks whether the simulated price is **less than or equal to the barrier (L)**. If it is, the payoff for that path is 0. If it is not, the payoff is the maximum of the difference between the simulated price and the strike price (K) and 0.
+
+Finally, the function calculates the mean of the payoffs, discounts it by the risk-free interest rate and returns the mean as the estimated value of the option.
+
+
+* R-export
+
+In the main file, I build a getDownAndOutCall method, and specify it with the note: "// [[Rcpp::export]]", this helps R understand the methods to be exported.
+
+```{c++}
+
+#include<Rcpp.h>
+#include<vector>
+#include<ctime>
+#include<cstdlib>
+#include"EuropeanOption.h"
+#include"getOneGaussianByBoxMueller.h"
+
+using namespace Rcpp;
+using namespace std;
+
+// [[Rcpp::export]]
+double getDownAndOutCall(double S_      = 95,
+                         double K_      = 100,
+                         double r_      = 0.07,
+                         double sigma_  = 0.24,
+                         double L_      = 80,
+                         double t_      = 0.75,
+                         int NumberOfPaths_ = 1000){
+
+  EuropeanOption europeanOption(S_, K_, r_, sigma_, L_, t_, NumberOfPaths_);
+
+  double result =  europeanOption.getDownAndOutCall();
+
+  return result;
+}
+
+
+```
+
+## 3.Building and Testing
+
+### 3.1. Building
+
+The statement **Rcpp::compileAttributes()** will help us generated the necessary code before building the project.
+
+With the RStudio tool, you can build the project as "source" or "win.binary". I have experimented with these two options.
+
+![](img/img4.png)
+
+
+The package built as suore will be named "FileName_version.tar.zip", the package built as a binary is named "FileName_version.zip".
+
+![](img/img5.png)
+
+### 3.2. Testing
+
+I have tried installing packages, however I only have success running the statements from the package as binary.
+
+```{r, eval=FALSE}
+# loading packages
+library(tidyverse)
+library(inline) # allows to use C++ inline - within R code
+library(Rcpp)   # Rccp package by Dirk Eddelbuettel
+library(xts)
+library(dygraphs)
+
+setwd("C:/Users/Windows/OneDrive/Learning/WNE/SEM3/ApplyFinace/Lab3And4/")
+list.files()
+
+
+# install.packages("montecarlo426246_1.0.tar.zip",
+#                  type = "source",
+#                  repos = NULL)
+
+install.packages("montecarlo426246_1.0.zip",
+                 type = "source",
+                 repos = NULL)
+
+x <- montecarlo426246::getDownAndOutCall(S_      = 95,
+                                         K_      = 100,
+                                         r_      = 0.07,
+                                         sigma_  = 0.24,
+                                         L_      = 80,
+                                         t_      = 0.75,
+                                         NumberOfPaths_ = 1000)
+
+print(x)
+
+```
+
+Result:
+
+![](img/img6.png)
+
+## 4.Conclustion
+
+I have successfully implemented the project requirements.
+
+Through this project, I reviewed my knowledge of option pricing with Monte Carlo. I also know basic C++ programming, especially object-oriented programming. I also learned how to use C++ in R, and how to build new library packages.
+
+Although I do not have much experience in the financial field, I find that the knowledge in this exercise will help me in simulating data series in the upcoming problems.
+
+Finally, I would like to thank **Prof. Paweł Sakowski**, who led the labs and shared his knowledge in this module.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+================================================================================
